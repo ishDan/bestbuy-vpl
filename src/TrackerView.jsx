@@ -310,19 +310,34 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
   const searchResults = useMemo(() => {
     if (!search.trim()) return []
     const q = search.toLowerCase()
-    const seen = new Set()
-    return variants.filter(v => {
-      const key = `${v.product.brand}|${v.product.model}|${v.variant}|${v.color}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return (
+
+    // Dedupe to brand+model+variant (drop color/size). One row per product
+    // family, then user picks colour/size from the dropdowns. This stops
+    // 48 Ring 5 variants from drowning out a search like "oura".
+    const seen = new Map()
+    for (const v of variants) {
+      const matches =
         v.product.brand.toLowerCase().includes(q) ||
         v.product.model.toLowerCase().includes(q) ||
         (v.variant || '').toLowerCase().includes(q) ||
         (v.color || '').toLowerCase().includes(q)
-      )
-    }).slice(0, 8)
-  }, [variants, search])
+      if (!matches) continue
+      const key = `${v.product.brand}|${v.product.model}|${v.variant || ''}`
+      if (!seen.has(key)) seen.set(key, v)
+    }
+
+    // Include products in the products table that have no variants yet
+    for (const p of products ?? []) {
+      if (!p.brand || !p.model) continue
+      const key = `${p.brand}|${p.model}|`
+      if (seen.has(key)) continue
+      if (p.brand.toLowerCase().includes(q) || p.model.toLowerCase().includes(q)) {
+        seen.set(key, { id: `prod-${p.id}`, product: p, variant: null, color: null, size: null })
+      }
+    }
+
+    return [...seen.values()].slice(0, 12)
+  }, [variants, products, search])
 
   const topThisWeek = useMemo(() => getTopThisWeek(logs, variantMap, variants, 5), [logs, variantMap, variants])
   const recentlyLogged = useMemo(() => getRecentlyLogged(logs, variantMap, variants, 5), [logs, variantMap, variants])
@@ -332,9 +347,12 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
     setBrand(v.product.brand)
     setModel(v.product.model)
     setVariantText(v.variant || '')
-    setColor(v.color || '')
+    setColor('')
     setSize('')
     setCustomMode(false)
+    setAddingVariant(false)
+    setNewColor('')
+    setNewSize('')
   }
 
   function preselectCustom(productName) {
