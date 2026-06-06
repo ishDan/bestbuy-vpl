@@ -1100,6 +1100,7 @@ export default function App() {
         {tab === 'tracker' ? (
           <TrackerView
             variants={trackerVariants}
+            products={products}
             logs={trackerLogs}
             restockItems={restockItems}
             onSubmitLog={submitLog}

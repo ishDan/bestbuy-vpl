@@ -184,7 +184,7 @@ function chipLabel(v) {
 
 // ─── TrackerLogSheet ──────────────────────────────────────────────────────────
 
-function TrackerLogSheet({ variants, logs, onClose, onSubmit, onAddRestockItem, onAddVariant, preselect }) {
+function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRestockItem, onAddVariant, preselect }) {
   const [mode, setMode] = useState(preselect?.mode ?? 'log')
   const [search, setSearch] = useState('')
   const [brand, setBrand] = useState(preselect?.brand ?? '')
@@ -205,12 +205,21 @@ function TrackerLogSheet({ variants, logs, onClose, onSubmit, onAddRestockItem, 
 
   const variantMap = useMemo(() => Object.fromEntries(variants.map(v => [v.id, v])), [variants])
 
-  const brands = useMemo(() => [...new Set(variants.map(v => v.product.brand))].sort(), [variants])
+  // Include brands from variants AND wearable products without variants yet
+  const brands = useMemo(() => {
+    const s = new Set()
+    for (const v of variants) s.add(v.product.brand)
+    for (const p of products ?? []) if (p.category === 'Wearables') s.add(p.brand)
+    return [...s].sort()
+  }, [variants, products])
 
   const models = useMemo(() => {
     if (!brand) return []
-    return [...new Set(variants.filter(v => v.product.brand === brand).map(v => v.product.model))].sort()
-  }, [variants, brand])
+    const s = new Set()
+    for (const v of variants) if (v.product.brand === brand) s.add(v.product.model)
+    for (const p of products ?? []) if (p.category === 'Wearables' && p.brand === brand) s.add(p.model)
+    return [...s].sort()
+  }, [variants, products, brand])
 
   const variantTexts = useMemo(() => {
     if (!model) return []
@@ -275,8 +284,10 @@ function TrackerLogSheet({ variants, logs, onClose, onSubmit, onAddRestockItem, 
 
   const productId = useMemo(() => {
     if (!brand || !model) return null
-    return variants.find(v => v.product.brand === brand && v.product.model === model)?.product_id ?? null
-  }, [variants, brand, model])
+    const fromVariant = variants.find(v => v.product.brand === brand && v.product.model === model)?.product_id
+    if (fromVariant) return fromVariant
+    return (products ?? []).find(p => p.brand === brand && p.model === model)?.id ?? null
+  }, [variants, products, brand, model])
 
   const searchResults = useMemo(() => {
     if (!search.trim()) return []
@@ -1696,7 +1707,7 @@ function DraggableFAB({ onClick }) {
 }
 
 export default function TrackerView({
-  variants, logs, restockItems,
+  variants, products, logs, restockItems,
   onSubmitLog, onDeleteLog, onAddRestockItem, onDeleteRestockItem,
   apiAllowed, onSetupVariants, onAddVariant,
   showReport, onCloseReport,
@@ -1823,6 +1834,7 @@ export default function TrackerView({
       {showSheet && (
         <TrackerLogSheet
           variants={variants}
+          products={products}
           logs={logs}
           preselect={preselect}
           onClose={closeSheet}
