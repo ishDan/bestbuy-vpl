@@ -1011,13 +1011,34 @@ export default function App() {
         }
       }
       if (upserts.length) {
-        await supabase.from('specs').upsert(upserts, { onConflict: 'product_id,category,spec_name', ignoreDuplicates: false })
+        let { error: upsertErr } = await supabase
+          .from('specs')
+          .upsert(upserts, { onConflict: 'product_id,category,spec_name', ignoreDuplicates: false })
+        // Fallback if the unique constraint isn't there: delete-then-insert
+        if (upsertErr) {
+          console.warn('Spec upsert failed, falling back to delete+insert:', upsertErr.message)
+          const productIds = [...new Set(upserts.map(u => u.product_id))]
+          for (const pid of productIds) {
+            const cats = [...new Set(upserts.filter(u => u.product_id === pid).map(u => u.category))]
+            for (const cat of cats) {
+              const names = upserts.filter(u => u.product_id === pid && u.category === cat).map(u => u.spec_name)
+              const { error: delErr } = await supabase
+                .from('specs').delete()
+                .eq('product_id', pid).eq('category', cat).in('spec_name', names)
+              if (delErr) throw new Error(`Spec cleanup failed: ${delErr.message}`)
+            }
+          }
+          const { error: insErr } = await supabase.from('specs').insert(upserts)
+          if (insErr) throw new Error(`Spec save failed: ${insErr.message}`)
+        }
       }
       if (productId && deletes.length) {
-        await Promise.all(deletes.map(d =>
+        const results = await Promise.all(deletes.map(d =>
           supabase.from('specs').delete()
             .eq('product_id', id).eq('category', d.category).eq('spec_name', d.spec_name)
         ))
+        const delErr = results.find(r => r.error)?.error
+        if (delErr) throw new Error(`Spec delete failed: ${delErr.message}`)
       }
     }
 
