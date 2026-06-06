@@ -1738,20 +1738,31 @@ export default function TrackerView({
   const topThisWeek = useMemo(() => getTopThisWeek(logs, variantMap, variants, 6), [logs, variantMap, variants])
 
   const unknownProducts = useMemo(() => {
-    const variantProductNames = new Set(
-      variants.map(v => `${v.product.brand} ${v.product.model}`.toLowerCase())
-    )
+    // A custom_product is "known" if it matches any brand+model that already
+    // exists either in tracker_variants OR in the products table. Strip any
+    // trailing material suffix (Titanium, Ceramic) so e.g. "Oura Ring 4
+    // Titanium" resolves to "Oura Ring 4" — materials are treated as part of
+    // the color rather than a separate product.
+    const MATERIAL_RE = /\s+(titanium|ceramic)\s*$/i
+    const normalize = (s) => s.replace(MATERIAL_RE, '').trim().toLowerCase()
+
+    const knownNames = new Set()
+    for (const v of variants) knownNames.add(`${v.product.brand} ${v.product.model}`.toLowerCase())
+    for (const p of products ?? []) {
+      if (p.brand && p.model) knownNames.add(`${p.brand} ${p.model}`.toLowerCase())
+    }
+
     const seen = new Set()
     const result = []
     for (const log of logs) {
       if (!log.custom_product) continue
-      const key = log.custom_product.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      if (!variantProductNames.has(key)) result.push(log.custom_product)
+      const norm = normalize(log.custom_product)
+      if (seen.has(norm)) continue
+      seen.add(norm)
+      if (!knownNames.has(norm)) result.push(log.custom_product)
     }
     return result
-  }, [variants, logs])
+  }, [variants, products, logs])
 
   function openSheet(preselectData = null) {
     setPreselect(preselectData)
