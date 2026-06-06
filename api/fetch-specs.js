@@ -31,23 +31,48 @@ module.exports = async function handler(req, res) {
 
   const productLabel = [brand, model, variant, size].filter(Boolean).join(' ')
 
-  try {
-    const model = req.body.noSearch ? 'llama-3.3-70b-versatile' : 'compound-beta'
+  const systemPrompt =
+    'You are a product spec lookup assistant. You have web search; use it to find the official manufacturer spec sheet and recent reviews for the requested product. Return only valid JSON, no markdown, no explanation. Prefer filling fields with concrete values over null whenever the spec sheet, a credible review, or a retailer listing mentions the spec.'
 
-    const response = await client.chat.completions.create({
-      model,
-      max_tokens: 1024,
+  const userPrompt = `Search the web for the official specs of the ${productLabel}.
+Look at the manufacturer's product page first, then trusted retailers (Best Buy, Amazon) and major reviews if needed.
+This may be a recently released product; do not refuse to look it up just because it's new.
+
+${SPEC_SCHEMA}
+
+Product: ${productLabel}
+Return ONLY the JSON object, no markdown, no explanation.`
+
+  const callModel = (modelId) =>
+    client.chat.completions.create({
+      model: modelId,
+      max_tokens: 1536,
       messages: [
-        {
-          role: 'system',
-          content: 'You are a product spec lookup assistant. Return only valid JSON, no markdown, no explanation.',
-        },
-        {
-          role: 'user',
-          content: `Look up the official specs for the ${productLabel}.\n\n${SPEC_SCHEMA}\n\nProduct: ${productLabel}\nReturn ONLY the JSON object, no markdown, no explanation.`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
       ],
     })
+
+  try {
+    // First-line: full compound-beta (deepest web search). Fall back to mini
+    // (still has search) on rate limit/size issues, then to llama (no search)
+    // as a last resort if both web-search models fail entirely.
+    let response
+    if (req.body.noSearch) {
+      response = await callModel('llama-3.3-70b-versatile')
+    } else {
+      try {
+        response = await callModel('compound-beta')
+      } catch (e1) {
+        console.warn('compound-beta failed, trying compound-beta-mini:', e1.message)
+        try {
+          response = await callModel('compound-beta-mini')
+        } catch (e2) {
+          console.warn('compound-beta-mini failed, falling back to llama-3.3-70b-versatile:', e2.message)
+          response = await callModel('llama-3.3-70b-versatile')
+        }
+      }
+    }
 
     const raw = response.choices[0]?.message?.content?.trim() ?? ''
     const jsonStr = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()

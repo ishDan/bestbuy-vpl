@@ -205,17 +205,17 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
 
   const variantMap = useMemo(() => Object.fromEntries(variants.map(v => [v.id, v])), [variants])
 
-  // Include brands from variants AND wearable products without variants yet.
-  // Brand match is case-insensitive so that a product saved with different
-  // capitalisation (e.g. "oura" vs existing "Oura") still groups together.
+  // Include brands from variants AND from every product (any category) so that
+  // products added without a category, or saved with a different category than
+  // 'Wearables', still appear in the tracker dropdown. Brand match is
+  // case-insensitive so different capitalisations group under one entry.
   const brands = useMemo(() => {
     const byLower = new Map()
     for (const v of variants) byLower.set(v.product.brand.toLowerCase(), v.product.brand)
     for (const p of products ?? []) {
       if (!p.brand) continue
-      const cat = (p.category || '').toLowerCase()
-      if (cat !== 'wearables') continue
-      if (!byLower.has(p.brand.toLowerCase())) byLower.set(p.brand.toLowerCase(), p.brand)
+      const key = p.brand.toLowerCase()
+      if (!byLower.has(key)) byLower.set(key, p.brand)
     }
     return [...byLower.values()].sort()
   }, [variants, products])
@@ -229,8 +229,6 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
     }
     for (const p of products ?? []) {
       if (!p.brand || !p.model) continue
-      const cat = (p.category || '').toLowerCase()
-      if (cat !== 'wearables') continue
       if (p.brand.toLowerCase() === bLower) s.add(p.model)
     }
     return [...s].sort()
