@@ -205,19 +205,34 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
 
   const variantMap = useMemo(() => Object.fromEntries(variants.map(v => [v.id, v])), [variants])
 
-  // Include brands from variants AND wearable products without variants yet
+  // Include brands from variants AND wearable products without variants yet.
+  // Brand match is case-insensitive so that a product saved with different
+  // capitalisation (e.g. "oura" vs existing "Oura") still groups together.
   const brands = useMemo(() => {
-    const s = new Set()
-    for (const v of variants) s.add(v.product.brand)
-    for (const p of products ?? []) if (p.category === 'Wearables') s.add(p.brand)
-    return [...s].sort()
+    const byLower = new Map()
+    for (const v of variants) byLower.set(v.product.brand.toLowerCase(), v.product.brand)
+    for (const p of products ?? []) {
+      if (!p.brand) continue
+      const cat = (p.category || '').toLowerCase()
+      if (cat !== 'wearables') continue
+      if (!byLower.has(p.brand.toLowerCase())) byLower.set(p.brand.toLowerCase(), p.brand)
+    }
+    return [...byLower.values()].sort()
   }, [variants, products])
 
   const models = useMemo(() => {
     if (!brand) return []
+    const bLower = brand.toLowerCase()
     const s = new Set()
-    for (const v of variants) if (v.product.brand === brand) s.add(v.product.model)
-    for (const p of products ?? []) if (p.category === 'Wearables' && p.brand === brand) s.add(p.model)
+    for (const v of variants) {
+      if (v.product.brand.toLowerCase() === bLower) s.add(v.product.model)
+    }
+    for (const p of products ?? []) {
+      if (!p.brand || !p.model) continue
+      const cat = (p.category || '').toLowerCase()
+      if (cat !== 'wearables') continue
+      if (p.brand.toLowerCase() === bLower) s.add(p.model)
+    }
     return [...s].sort()
   }, [variants, products, brand])
 
@@ -284,9 +299,14 @@ function TrackerLogSheet({ variants, products, logs, onClose, onSubmit, onAddRes
 
   const productId = useMemo(() => {
     if (!brand || !model) return null
-    const fromVariant = variants.find(v => v.product.brand === brand && v.product.model === model)?.product_id
+    const bL = brand.toLowerCase(), mL = model.toLowerCase()
+    const fromVariant = variants.find(v =>
+      v.product.brand.toLowerCase() === bL && v.product.model.toLowerCase() === mL
+    )?.product_id
     if (fromVariant) return fromVariant
-    return (products ?? []).find(p => p.brand === brand && p.model === model)?.id ?? null
+    return (products ?? []).find(p =>
+      (p.brand || '').toLowerCase() === bL && (p.model || '').toLowerCase() === mL
+    )?.id ?? null
   }, [variants, products, brand, model])
 
   const searchResults = useMemo(() => {
